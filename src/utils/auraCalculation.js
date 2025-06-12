@@ -77,53 +77,7 @@ export function isTodaysTask(taskCurrentDate, userCurrentDate) {
   return taskDate.getTime() === userDate.getTime();
 }
 
-export function findCurrentAuraDate(userCurrentDate, auraDates) {
-  const userDate = new Date(userCurrentDate);
-  userDate.setHours(0, 0, 0, 0);
-  
-  // Find the most appropriate aura date for the user's current date
-  let currentAuraDate = null;
-  
-  for (let i = 0; i < auraDates.length; i++) {
-    const auraDate = new Date(auraDates[i]);
-    auraDate.setHours(0, 0, 0, 0);
-    
-    if (auraDate.getTime() === userDate.getTime()) {
-      // Exact match - this is today's task
-      return auraDate;
-    } else if (auraDate <= userDate) {
-      // This aura date is before or equal to user date
-      currentAuraDate = auraDate;
-    } else {
-      // This aura date is after user date
-      // If we have a previous date that's <= user date, use it
-      // Otherwise use this future date
-      return currentAuraDate || auraDate;
-    }
-  }
-  
-  // If we've gone through all dates and they're all <= user date,
-  // return the last one (task should be completed)
-  return currentAuraDate || (auraDates.length > 0 ? new Date(auraDates[auraDates.length - 1]) : null);
-}
-
-export function shouldUpdateTaskDate(taskCurrentDate, userCurrentDate, auraDates) {
-  const userDate = new Date(userCurrentDate);
-  userDate.setHours(0, 0, 0, 0);
-  
-  const taskDate = new Date(taskCurrentDate);
-  taskDate.setHours(0, 0, 0, 0);
-  
-  // If user date is after task date, we need to find the appropriate aura date
-  if (userDate > taskDate) {
-    const newAuraDate = findCurrentAuraDate(userCurrentDate, auraDates);
-    return newAuraDate && newAuraDate.getTime() !== taskDate.getTime();
-  }
-  
-  return false;
-}
-
-// NEW FUNCTION: Get the second aura date for initial task display
+// Get the second aura date for initial task display
 export function getSecondAuraDate(auraDates) {
   if (auraDates.length >= 2) {
     return new Date(auraDates[1]); // Return the second date (index 1)
@@ -133,7 +87,7 @@ export function getSecondAuraDate(auraDates) {
   return null;
 }
 
-// NEW FUNCTION: Get the appropriate display date based on user's current date and aura dates
+// Get the appropriate display date based on user's current date and task's aura dates
 export function getTaskDisplayDate(userCurrentDate, auraDates, taskCreatedDate) {
   const userDate = new Date(userCurrentDate);
   userDate.setHours(0, 0, 0, 0);
@@ -146,6 +100,38 @@ export function getTaskDisplayDate(userCurrentDate, auraDates, taskCreatedDate) 
     return getSecondAuraDate(auraDates);
   }
   
-  // Otherwise, find the appropriate aura date based on user's current date
-  return findCurrentAuraDate(userCurrentDate, auraDates);
+  // Find the appropriate aura date based on user's current date
+  let appropriateDate = null;
+  
+  for (let i = 0; i < auraDates.length; i++) {
+    const auraDate = new Date(auraDates[i]);
+    auraDate.setHours(0, 0, 0, 0);
+    
+    if (auraDate.getTime() === userDate.getTime()) {
+      // Exact match - this is today's task
+      return auraDate;
+    } else if (auraDate <= userDate) {
+      // This aura date is before or equal to user date
+      appropriateDate = auraDate;
+    } else {
+      // This aura date is after user date
+      // Return the most recent past date or this future date if no past date exists
+      return appropriateDate || auraDate;
+    }
+  }
+  
+  // If all dates are in the past, return the last one
+  return appropriateDate || (auraDates.length > 0 ? new Date(auraDates[auraDates.length - 1]) : null);
+}
+
+export function shouldUpdateTaskDate(taskCurrentDate, userCurrentDate, auraDates) {
+  const userDate = new Date(userCurrentDate);
+  userDate.setHours(0, 0, 0, 0);
+  
+  const taskDate = new Date(taskCurrentDate);
+  taskDate.setHours(0, 0, 0, 0);
+  
+  // Check if we need to update to a more appropriate aura date
+  const newAuraDate = getTaskDisplayDate(userCurrentDate, auraDates, auraDates[0]);
+  return newAuraDate && newAuraDate.getTime() !== taskDate.getTime();
 }
