@@ -23,12 +23,13 @@ const FolderPage = () => {
 
   const collectionName = `folder-${folderId}`;
 
-  // Check if current date is set on component mount
+  // CRITICAL: Check if current date is set on component mount - NEVER auto-detect
   useEffect(() => {
-    const userCurrentDate = dateManager.getCurrentDate();
+    // Always check if date is set, never use automatic date detection
     if (!dateManager.isDateSet()) {
       setShowCurrentDatePicker(true);
     } else {
+      const userCurrentDate = dateManager.getCurrentDate();
       setCurrentDate(userCurrentDate);
     }
   }, []);
@@ -102,7 +103,7 @@ const FolderPage = () => {
     setTasks(prev => [...prev]);
   };
 
-  // Show current date picker if no date is set
+  // CRITICAL: Show current date picker if no date is set - NEVER auto-detect
   if (showCurrentDatePicker) {
     return <CurrentDatePicker onDateSelect={handleCurrentDateSelect} />;
   }

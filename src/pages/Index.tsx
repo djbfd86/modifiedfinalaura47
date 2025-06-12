@@ -30,16 +30,18 @@ const Index = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [currentDate, setCurrentDate] = useState(null);
 
-  // Check if current date is set on component mount
+  // CRITICAL: Check if current date is set on component mount - NEVER auto-detect date
   useEffect(() => {
-    const userCurrentDate = dateManager.getCurrentDate();
+    // Always check if date is set, never use automatic date detection
     if (!dateManager.isDateSet()) {
       setShowCurrentDatePicker(true);
     } else {
+      const userCurrentDate = dateManager.getCurrentDate();
       setCurrentDate(userCurrentDate);
     }
   }, []);
 
+  // Listen for tasks and calculate today's tasks based on user's current date
   useEffect(() => {
     if (!currentDate) return;
 
@@ -359,7 +361,7 @@ const Index = () => {
            searchResults.folderTasks.reduce((total, folderResult) => total + folderResult.tasks.length, 0);
   };
 
-  // Show current date picker if no date is set
+  // CRITICAL: Show current date picker if no date is set - NEVER auto-detect
   if (showCurrentDatePicker) {
     return <CurrentDatePicker onDateSelect={handleCurrentDateSelect} />;
   }
