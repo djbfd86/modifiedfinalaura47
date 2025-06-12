@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { generateAuraDates, formatDate } from '../utils/auraCalculation';
+import { generateAuraDates, formatDate, updateTaskCurrentDate, getNextAuraDate } from '../utils/auraCalculation';
+import { dateManager } from '../utils/dateManager';
 import TextPopup from './TextPopup';
 import ImageUpload from './ImageUpload';
 import ConfirmDialog from './ConfirmDialog';
@@ -22,6 +23,7 @@ const TaskItem = ({ task, collectionName, onUpdate }) => {
   const [showText2Input, setShowText2Input] = useState(false);
   const [showText2, setShowText2] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [currentDisplayDate, setCurrentDisplayDate] = useState(new Date(task.currentDate));
 
   // Check if this is a folder task (not main page task)
   const isFolderTask = collectionName.includes('folder');
@@ -30,6 +32,45 @@ const TaskItem = ({ task, collectionName, onUpdate }) => {
     if (!text) return '';
     return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
   };
+
+  // Update task's current date based on user's current date
+  useEffect(() => {
+    const updateTaskDate = async () => {
+      const userCurrentDate = dateManager.getCurrentDate();
+      if (!userCurrentDate || isUpdating) return;
+
+      try {
+        // Generate aura dates for this task
+        const auraDates = generateAuraDates(new Date(task.createdAt), new Date(task.endDate));
+        
+        // Calculate what the current date should be based on user's current date
+        const newCurrentDate = updateTaskCurrentDate(task, userCurrentDate, auraDates);
+        
+        // If the calculated date is different from stored date, update it
+        const storedCurrentDate = new Date(task.currentDate);
+        storedCurrentDate.setHours(0, 0, 0, 0);
+        newCurrentDate.setHours(0, 0, 0, 0);
+        
+        if (newCurrentDate.getTime() !== storedCurrentDate.getTime()) {
+          setIsUpdating(true);
+          const taskRef = doc(db, collectionName, task.id);
+          await updateDoc(taskRef, { 
+            currentDate: newCurrentDate.toISOString(),
+            lastUpdated: userCurrentDate.toISOString()
+          });
+          setCurrentDisplayDate(newCurrentDate);
+        } else {
+          setCurrentDisplayDate(storedCurrentDate);
+        }
+      } catch (error) {
+        console.error('Error updating task date:', error);
+      } finally {
+        setIsUpdating(false);
+      }
+    };
+
+    updateTaskDate();
+  }, [task, collectionName, isUpdating]);
 
   const handleSaveText = async () => {
     try {
@@ -90,39 +131,23 @@ const TaskItem = ({ task, collectionName, onUpdate }) => {
     
     try {
       setIsUpdating(true);
+      
+      // Generate aura dates for this task
       const auraDates = generateAuraDates(new Date(task.createdAt), new Date(task.endDate));
-      const currentDate = new Date(task.currentDate);
       
-      // Set hours to 0 for accurate date comparison
-      currentDate.setHours(0, 0, 0, 0);
-      
-      let nextAuraDate = null;
-      let currentIndex = -1;
-
-      // First find the current date's index in aura dates
-      for (let i = 0; i < auraDates.length; i++) {
-        const auraDate = new Date(auraDates[i]);
-        auraDate.setHours(0, 0, 0, 0);
-        
-        if (auraDate.getTime() === currentDate.getTime()) {
-          currentIndex = i;
-          break;
-        }
-      }
-
       // Get the next aura date
-      if (currentIndex !== -1 && currentIndex + 1 < auraDates.length) {
-        nextAuraDate = auraDates[currentIndex + 1];
-      }
+      const nextAuraDate = getNextAuraDate(currentDisplayDate, auraDates);
       
       if (nextAuraDate && nextAuraDate <= new Date(task.endDate)) {
         const taskRef = doc(db, collectionName, task.id);
-        const updateData = {
-          currentDate: nextAuraDate.toISOString(),
-          lastUpdated: new Date().toISOString()
-        };
+        const userCurrentDate = dateManager.getCurrentDate();
         
-        await updateDoc(taskRef, updateData);
+        await updateDoc(taskRef, {
+          currentDate: nextAuraDate.toISOString(),
+          lastUpdated: userCurrentDate.toISOString()
+        });
+        
+        setCurrentDisplayDate(nextAuraDate);
         onUpdate();
       }
     } catch (error) {
@@ -146,46 +171,6 @@ const TaskItem = ({ task, collectionName, onUpdate }) => {
     }
   };
 
-  useEffect(() => {
-    const updateCurrentDate = async () => {
-      if (isUpdating) return;
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const taskDate = new Date(task.currentDate);
-      taskDate.setHours(0, 0, 0, 0);
-      
-      const createdDate = new Date(task.createdAt);
-      createdDate.setHours(0, 0, 0, 0);
-      
-      if (
-        today.getTime() !== taskDate.getTime() && 
-        today.getTime() !== createdDate.getTime() &&
-        (!task.lastUpdated || new Date(task.lastUpdated).getTime() !== today.getTime())
-      ) {
-        try {
-          setIsUpdating(true);
-          const taskRef = doc(db, collectionName, task.id);
-          await updateDoc(taskRef, { 
-            currentDate: today.toISOString(),
-            lastUpdated: today.toISOString()
-          });
-        } catch (error) {
-          console.error('Error updating current date:', error);
-        } finally {
-          setIsUpdating(false);
-        }
-      }
-    };
-
-    updateCurrentDate();
-  }, [task, collectionName, isUpdating]);
-
-  const getCurrentDate = () => {
-    return new Date(task.currentDate);
-  };
-
   return (
     <Card className="bg-slate-800/60 border-slate-700 hover:bg-slate-800/80 transition-all duration-300 backdrop-blur-sm hover:shadow-lg hover:shadow-blue-500/10">
       <CardContent className="p-6">
@@ -199,7 +184,7 @@ const TaskItem = ({ task, collectionName, onUpdate }) => {
               <h3 className="text-white font-medium">Task #{task.serialNumber}</h3>
               <div className="flex items-center text-slate-400 text-sm mt-1">
                 <Calendar className="w-3 h-3 mr-1" />
-                Next: {formatDate(getCurrentDate())}
+                Next: {formatDate(currentDisplayDate)}
               </div>
             </div>
           </div>

@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { generateAuraDates } from '../utils/auraCalculation';
-import DatePicker from '../components/DatePicker';
+import { generateAuraDates, isTodaysTask } from '../utils/auraCalculation';
+import { dateManager } from '../utils/dateManager';
+import CurrentDatePicker from '../components/CurrentDatePicker';
+import TaskDatePicker from '../components/TaskDatePicker';
 import TaskItem from '../components/TaskItem';
 import { Plus, FolderPlus, Layout, Folder, CheckSquare, ArrowDown, Trash2, Calendar, Clock, Search, X, ExternalLink } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -15,19 +17,32 @@ const Index = () => {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
   const [folders, setFolders] = useState([]);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showCurrentDatePicker, setShowCurrentDatePicker] = useState(false);
+  const [showTaskDatePicker, setShowTaskDatePicker] = useState(false);
   const [showFolderInput, setShowFolderInput] = useState(false);
   const [folderName, setFolderName] = useState('');
   const [editingFolder, setEditingFolder] = useState(null);
-  const [lastEndDate, setLastEndDate] = useState(null);
   const [todaysTasks, setTodaysTasks] = useState([]);
   const [foldersWithTodaysTasks, setFoldersWithTodaysTasks] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredTasks, setFilteredTasks] = useState([]);
   const [searchResults, setSearchResults] = useState({ mainTasks: [], folderTasks: [] });
   const [isSearching, setIsSearching] = useState(false);
+  const [currentDate, setCurrentDate] = useState(null);
+
+  // Check if current date is set on component mount
+  useEffect(() => {
+    const userCurrentDate = dateManager.getCurrentDate();
+    if (!userCurrentDate) {
+      setShowCurrentDatePicker(true);
+    } else {
+      setCurrentDate(userCurrentDate);
+    }
+  }, []);
 
   useEffect(() => {
+    if (!currentDate) return;
+
     const tasksQuery = query(collection(db, 'tasks'), orderBy('serialNumber'));
     const unsubscribeTasks = onSnapshot(tasksQuery, (querySnapshot) => {
       const tasksData = [];
@@ -35,19 +50,11 @@ const Index = () => {
         tasksData.push({ id: doc.id, ...doc.data() });
       });
       setTasks(tasksData);
-      
-      if (tasksData.length > 0) {
-        setLastEndDate(new Date(tasksData[tasksData.length - 1].endDate));
-      }
 
-      // Update today's tasks
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todaysTasks = tasksData.filter(task => {
-        const taskDate = new Date(task.currentDate);
-        taskDate.setHours(0, 0, 0, 0);
-        return taskDate.getTime() === today.getTime();
-      });
+      // Update today's tasks based on user's current date
+      const todaysTasks = tasksData.filter(task => 
+        isTodaysTask(task.currentDate, currentDate)
+      );
       setTodaysTasks(todaysTasks);
     });
 
@@ -64,7 +71,7 @@ const Index = () => {
       unsubscribeTasks();
       unsubscribeFolders();
     };
-  }, []);
+  }, [currentDate]);
 
   // Enhanced search function that searches across all tasks and folders
   const searchAllTasks = async (searchString) => {
@@ -170,10 +177,9 @@ const Index = () => {
 
   // Check for today's tasks in all folders
   useEffect(() => {
+    if (!currentDate) return;
+
     const checkFoldersForTodaysTasks = async () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
       const foldersWithTasks = [];
       
       for (const folder of folders) {
@@ -187,11 +193,9 @@ const Index = () => {
             folderTasks.push({ id: doc.id, ...doc.data() });
           });
           
-          const todaysTasksInFolder = folderTasks.filter(task => {
-            const taskDate = new Date(task.currentDate);
-            taskDate.setHours(0, 0, 0, 0);
-            return taskDate.getTime() === today.getTime();
-          });
+          const todaysTasksInFolder = folderTasks.filter(task => 
+            isTodaysTask(task.currentDate, currentDate)
+          );
           
           if (todaysTasksInFolder.length > 0) {
             foldersWithTasks.push({
@@ -211,7 +215,7 @@ const Index = () => {
     if (folders.length > 0) {
       checkFoldersForTodaysTasks();
     }
-  }, [folders]);
+  }, [folders, currentDate]);
 
   const updateTaskSerialNumbers = async () => {
     try {
@@ -237,7 +241,13 @@ const Index = () => {
     }
   };
 
-  const handleAddTask = () => setShowDatePicker(true);
+  const handleCurrentDateSelect = (selectedDate) => {
+    dateManager.setCurrentDate(selectedDate);
+    setCurrentDate(selectedDate);
+    setShowCurrentDatePicker(false);
+  };
+
+  const handleAddTask = () => setShowTaskDatePicker(true);
   const handleAddFolder = () => setShowFolderInput(true);
 
   const handleFolderSave = async (e) => {
@@ -252,7 +262,7 @@ const Index = () => {
         } else {
           await addDoc(collection(db, 'folders'), {
             name: folderName.trim(),
-            createdAt: new Date().toISOString()
+            createdAt: currentDate.toISOString()
           });
         }
         setFolderName('');
@@ -280,10 +290,9 @@ const Index = () => {
     }
   };
 
-  const handleDateSelect = async (endDate) => {
+  const handleTaskDateSelect = async (currentTaskDate, endDate) => {
     try {
-      const today = new Date();
-      const auraDates = generateAuraDates(today, endDate);
+      const auraDates = generateAuraDates(currentTaskDate, endDate);
       
       // Get the current highest serial number
       const tasksQuery = query(collection(db, 'tasks'), orderBy('serialNumber', 'desc'));
@@ -292,20 +301,23 @@ const Index = () => {
       
       const serialNumber = highestSerialNumber + 1;
 
+      // The current date for the task should be the second aura date (index 1) or the start date if only one date
+      const taskCurrentDate = auraDates.length > 1 ? auraDates[1] : auraDates[0];
+
       await addDoc(collection(db, 'tasks'), {
         serialNumber,
         endDate: endDate.toISOString(),
-        currentDate: auraDates[1]?.toISOString() || today.toISOString(),
-        currentAuraIndex: 0,
+        currentDate: taskCurrentDate.toISOString(),
+        currentAuraIndex: auraDates.length > 1 ? 1 : 0,
         text1: '',
         image1: null,
         image2: null,
-        createdAt: today.toISOString(),
-        lastUpdated: null
+        createdAt: currentTaskDate.toISOString(),
+        lastUpdated: null,
+        auraDates: auraDates.map(date => date.toISOString()) // Store aura dates for reference
       });
 
-      setShowDatePicker(false);
-      setLastEndDate(endDate);
+      setShowTaskDatePicker(false);
     } catch (error) {
       console.error('Error adding task:', error);
       toast({
@@ -347,6 +359,11 @@ const Index = () => {
            searchResults.folderTasks.reduce((total, folderResult) => total + folderResult.tasks.length, 0);
   };
 
+  // Show current date picker if no date is set
+  if (showCurrentDatePicker) {
+    return <CurrentDatePicker onDateSelect={handleCurrentDateSelect} />;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-gray-900 to-slate-800">
       <div className="container mx-auto px-4 py-8 max-w-7xl">
@@ -360,6 +377,22 @@ const Index = () => {
               <p className="text-slate-400 text-lg">
                 Organize your work with professional task management
               </p>
+              {currentDate && (
+                <div className="flex items-center space-x-2">
+                  <Calendar className="w-4 h-4 text-blue-400" />
+                  <span className="text-blue-300 text-sm">
+                    Current Date: {currentDate.toLocaleDateString()}
+                  </span>
+                  <Button
+                    onClick={() => setShowCurrentDatePicker(true)}
+                    variant="ghost"
+                    size="sm"
+                    className="text-blue-400 hover:text-blue-300 text-xs"
+                  >
+                    Change
+                  </Button>
+                </div>
+              )}
             </div>
             
             <div className="flex flex-col sm:flex-row gap-3">
@@ -736,11 +769,18 @@ const Index = () => {
         </Button>
 
         {/* Modals */}
-        {showDatePicker && (
-          <DatePicker
-            onDateSelect={handleDateSelect}
-            onCancel={() => setShowDatePicker(false)}
-            defaultDate={lastEndDate}
+        {showCurrentDatePicker && (
+          <CurrentDatePicker
+            onDateSelect={handleCurrentDateSelect}
+          />
+        )}
+
+        {showTaskDatePicker && (
+          <TaskDatePicker
+            onDateSelect={handleTaskDateSelect}
+            onCancel={() => setShowTaskDatePicker(false)}
+            defaultCurrentDate={currentDate}
+            defaultEndDate={null}
           />
         )}
 

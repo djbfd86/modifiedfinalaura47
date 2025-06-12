@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { collection, addDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { generateAuraDates } from '../utils/auraCalculation';
-import DatePicker from './DatePicker';
+import { generateAuraDates, isTodaysTask } from '../utils/auraCalculation';
+import { dateManager } from '../utils/dateManager';
+import CurrentDatePicker from './CurrentDatePicker';
+import TaskDatePicker from './TaskDatePicker';
 import TaskItem from './TaskItem';
 import { ArrowLeft, Plus, Folder, CheckSquare, Calendar } from 'lucide-react';
 import { Button } from './ui/button';
@@ -14,13 +16,26 @@ const FolderPage = () => {
   const { folderId } = useParams();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [lastEndDate, setLastEndDate] = useState(null);
+  const [showCurrentDatePicker, setShowCurrentDatePicker] = useState(false);
+  const [showTaskDatePicker, setShowTaskDatePicker] = useState(false);
   const [todaysTasks, setTodaysTasks] = useState([]);
+  const [currentDate, setCurrentDate] = useState(null);
 
   const collectionName = `folder-${folderId}`;
 
+  // Check if current date is set on component mount
   useEffect(() => {
+    const userCurrentDate = dateManager.getCurrentDate();
+    if (!userCurrentDate) {
+      setShowCurrentDatePicker(true);
+    } else {
+      setCurrentDate(userCurrentDate);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!currentDate) return;
+
     const q = query(collection(db, collectionName), orderBy('serialNumber'));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const tasksData = [];
@@ -28,49 +43,56 @@ const FolderPage = () => {
         tasksData.push({ id: doc.id, ...doc.data() });
       });
       setTasks(tasksData);
-      
-      if (tasksData.length > 0) {
-        setLastEndDate(new Date(tasksData[tasksData.length - 1].endDate));
-      }
 
-      // Update today's tasks
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todaysTasks = tasksData.filter(task => {
-        const taskDate = new Date(task.currentDate);
-        taskDate.setHours(0, 0, 0, 0);
-        return taskDate.getTime() === today.getTime();
-      });
+      // Update today's tasks based on user's current date
+      const todaysTasks = tasksData.filter(task => 
+        isTodaysTask(task.currentDate, currentDate)
+      );
       setTodaysTasks(todaysTasks);
     });
 
     return () => unsubscribe();
-  }, [collectionName]);
+  }, [collectionName, currentDate]);
 
-  const handleAddTask = () => {
-    setShowDatePicker(true);
+  const handleCurrentDateSelect = (selectedDate) => {
+    dateManager.setCurrentDate(selectedDate);
+    setCurrentDate(selectedDate);
+    setShowCurrentDatePicker(false);
   };
 
-  const handleDateSelect = async (endDate) => {
+  const handleAddTask = () => {
+    setShowTaskDatePicker(true);
+  };
+
+  const handleTaskDateSelect = async (currentTaskDate, endDate) => {
     try {
-      const today = new Date();
-      const auraDates = generateAuraDates(today, endDate);
-      const serialNumber = tasks.length + 1;
+      const auraDates = generateAuraDates(currentTaskDate, endDate);
+      
+      // Get the current highest serial number for this folder
+      const tasksQuery = query(collection(db, collectionName), orderBy('serialNumber', 'desc'));
+      const querySnapshot = await getDocs(tasksQuery);
+      const highestSerialNumber = querySnapshot.empty ? 0 : querySnapshot.docs[0].data().serialNumber;
+      
+      const serialNumber = highestSerialNumber + 1;
+
+      // The current date for the task should be the second aura date (index 1) or the start date if only one date
+      const taskCurrentDate = auraDates.length > 1 ? auraDates[1] : auraDates[0];
 
       await addDoc(collection(db, collectionName), {
         serialNumber,
         endDate: endDate.toISOString(),
-        currentDate: auraDates[1]?.toISOString() || today.toISOString(),
-        currentAuraIndex: 0,
+        currentDate: taskCurrentDate.toISOString(),
+        currentAuraIndex: auraDates.length > 1 ? 1 : 0,
         text1: '',
         text2: '',
         image1: null,
         image2: null,
-        createdAt: new Date().toISOString()
+        createdAt: currentTaskDate.toISOString(),
+        lastUpdated: null,
+        auraDates: auraDates.map(date => date.toISOString()) // Store aura dates for reference
       });
 
-      setShowDatePicker(false);
-      setLastEndDate(endDate);
+      setShowTaskDatePicker(false);
     } catch (error) {
       console.error('Error adding task:', error);
     }
@@ -79,6 +101,11 @@ const FolderPage = () => {
   const handleUpdate = () => {
     setTasks(prev => [...prev]);
   };
+
+  // Show current date picker if no date is set
+  if (showCurrentDatePicker) {
+    return <CurrentDatePicker onDateSelect={handleCurrentDateSelect} />;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-gray-900 to-slate-800">
@@ -110,6 +137,22 @@ const FolderPage = () => {
                     </p>
                   </div>
                 </div>
+                {currentDate && (
+                  <div className="flex items-center space-x-2 ml-14">
+                    <Calendar className="w-4 h-4 text-blue-400" />
+                    <span className="text-blue-300 text-sm">
+                      Current Date: {currentDate.toLocaleDateString()}
+                    </span>
+                    <Button
+                      onClick={() => setShowCurrentDatePicker(true)}
+                      variant="ghost"
+                      size="sm"
+                      className="text-blue-400 hover:text-blue-300 text-xs"
+                    >
+                      Change
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
             
@@ -248,12 +291,19 @@ const FolderPage = () => {
           </Card>
         )}
 
-        {/* Date Picker Modal */}
-        {showDatePicker && (
-          <DatePicker
-            onDateSelect={handleDateSelect}
-            onCancel={() => setShowDatePicker(false)}
-            defaultDate={lastEndDate}
+        {/* Modals */}
+        {showCurrentDatePicker && (
+          <CurrentDatePicker
+            onDateSelect={handleCurrentDateSelect}
+          />
+        )}
+
+        {showTaskDatePicker && (
+          <TaskDatePicker
+            onDateSelect={handleTaskDateSelect}
+            onCancel={() => setShowTaskDatePicker(false)}
+            defaultCurrentDate={currentDate}
+            defaultEndDate={null}
           />
         )}
       </div>
