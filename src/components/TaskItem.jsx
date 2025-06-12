@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { generateAuraDates, formatDate, updateTaskCurrentDate, getNextAuraDate } from '../utils/auraCalculation';
+import { generateAuraDates, formatDate, updateTaskCurrentDate, getNextAuraDate, findCurrentAuraDate } from '../utils/auraCalculation';
 import { dateManager } from '../utils/dateManager';
 import TextPopup from './TextPopup';
 import ImageUpload from './ImageUpload';
@@ -43,9 +43,14 @@ const TaskItem = ({ task, collectionName, onUpdate }) => {
         // Generate aura dates for this task
         const auraDates = generateAuraDates(new Date(task.createdAt), new Date(task.endDate));
         
-        // Calculate what the current date should be based on user's current date
-        const newCurrentDate = updateTaskCurrentDate(task, userCurrentDate, auraDates);
+        // Find the appropriate current date based on user's current date
+        const newCurrentDate = findCurrentAuraDate(userCurrentDate, auraDates);
         
+        if (!newCurrentDate) {
+          setCurrentDisplayDate(new Date(task.currentDate));
+          return;
+        }
+
         // If the calculated date is different from stored date, update it
         const storedCurrentDate = new Date(task.currentDate);
         storedCurrentDate.setHours(0, 0, 0, 0);
@@ -64,6 +69,7 @@ const TaskItem = ({ task, collectionName, onUpdate }) => {
         }
       } catch (error) {
         console.error('Error updating task date:', error);
+        setCurrentDisplayDate(new Date(task.currentDate));
       } finally {
         setIsUpdating(false);
       }

@@ -26,7 +26,7 @@ const FolderPage = () => {
   // Check if current date is set on component mount
   useEffect(() => {
     const userCurrentDate = dateManager.getCurrentDate();
-    if (!userCurrentDate) {
+    if (!dateManager.isDateSet()) {
       setShowCurrentDatePicker(true);
     } else {
       setCurrentDate(userCurrentDate);
@@ -75,14 +75,14 @@ const FolderPage = () => {
       
       const serialNumber = highestSerialNumber + 1;
 
-      // The current date for the task should be the second aura date (index 1) or the start date if only one date
-      const taskCurrentDate = auraDates.length > 1 ? auraDates[1] : auraDates[0];
+      // The current date for the task should be the first aura date
+      const taskCurrentDate = auraDates[0];
 
       await addDoc(collection(db, collectionName), {
         serialNumber,
         endDate: endDate.toISOString(),
         currentDate: taskCurrentDate.toISOString(),
-        currentAuraIndex: auraDates.length > 1 ? 1 : 0,
+        currentAuraIndex: 0,
         text1: '',
         text2: '',
         image1: null,
