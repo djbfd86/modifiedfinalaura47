@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { collection, addDoc, onSnapshot, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { generateAuraDates, isTodaysTask } from '../utils/auraCalculation';
+import { generateAuraDates, isTodaysTask, getSecondAuraDate } from '../utils/auraCalculation';
 import { dateManager } from '../utils/dateManager';
 import CurrentDatePicker from './CurrentDatePicker';
 import TaskDatePicker from './TaskDatePicker';
@@ -76,14 +76,14 @@ const FolderPage = () => {
       
       const serialNumber = highestSerialNumber + 1;
 
-      // The current date for the task should be the first aura date
-      const taskCurrentDate = auraDates[0];
+      // IMPORTANT: Set the current date to the SECOND aura date for initial display
+      const taskCurrentDate = getSecondAuraDate(auraDates) || auraDates[0];
 
       await addDoc(collection(db, collectionName), {
         serialNumber,
         endDate: endDate.toISOString(),
         currentDate: taskCurrentDate.toISOString(),
-        currentAuraIndex: 0,
+        currentAuraIndex: 1, // Start from second aura date
         text1: '',
         text2: '',
         image1: null,

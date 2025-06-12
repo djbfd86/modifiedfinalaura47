@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { generateAuraDates, isTodaysTask } from '../utils/auraCalculation';
+import { generateAuraDates, isTodaysTask, getSecondAuraDate } from '../utils/auraCalculation';
 import { dateManager } from '../utils/dateManager';
 import CurrentDatePicker from '../components/CurrentDatePicker';
 import TaskDatePicker from '../components/TaskDatePicker';
@@ -30,15 +30,11 @@ const Index = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [currentDate, setCurrentDate] = useState(null);
 
-  // CRITICAL: Check if current date is set on component mount - NEVER auto-detect date
+  // CRITICAL: Always ask for current date on page load/refresh - NEVER auto-detect
   useEffect(() => {
-    // Always check if date is set, never use automatic date detection
-    if (!dateManager.isDateSet()) {
-      setShowCurrentDatePicker(true);
-    } else {
-      const userCurrentDate = dateManager.getCurrentDate();
-      setCurrentDate(userCurrentDate);
-    }
+    // Clear any existing session data on page load to force fresh date input
+    dateManager.forceReset();
+    setShowCurrentDatePicker(true);
   }, []);
 
   // Listen for tasks and calculate today's tasks based on user's current date
@@ -303,14 +299,14 @@ const Index = () => {
       
       const serialNumber = highestSerialNumber + 1;
 
-      // The current date for the task should be the first aura date
-      const taskCurrentDate = auraDates[0];
+      // IMPORTANT: Set the current date to the SECOND aura date for initial display
+      const taskCurrentDate = getSecondAuraDate(auraDates) || auraDates[0];
 
       await addDoc(collection(db, 'tasks'), {
         serialNumber,
         endDate: endDate.toISOString(),
         currentDate: taskCurrentDate.toISOString(),
-        currentAuraIndex: 0,
+        currentAuraIndex: 1, // Start from second aura date
         text1: '',
         image1: null,
         image2: null,

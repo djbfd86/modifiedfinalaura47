@@ -122,3 +122,30 @@ export function shouldUpdateTaskDate(taskCurrentDate, userCurrentDate, auraDates
   
   return false;
 }
+
+// NEW FUNCTION: Get the second aura date for initial task display
+export function getSecondAuraDate(auraDates) {
+  if (auraDates.length >= 2) {
+    return new Date(auraDates[1]); // Return the second date (index 1)
+  } else if (auraDates.length === 1) {
+    return new Date(auraDates[0]); // If only one date, return it
+  }
+  return null;
+}
+
+// NEW FUNCTION: Get the appropriate display date based on user's current date and aura dates
+export function getTaskDisplayDate(userCurrentDate, auraDates, taskCreatedDate) {
+  const userDate = new Date(userCurrentDate);
+  userDate.setHours(0, 0, 0, 0);
+  
+  const createdDate = new Date(taskCreatedDate);
+  createdDate.setHours(0, 0, 0, 0);
+  
+  // If user is visiting on the same day the task was created, show second aura date
+  if (userDate.getTime() === createdDate.getTime()) {
+    return getSecondAuraDate(auraDates);
+  }
+  
+  // Otherwise, find the appropriate aura date based on user's current date
+  return findCurrentAuraDate(userCurrentDate, auraDates);
+}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { generateAuraDates, formatDate, getNextAuraDate, findCurrentAuraDate, shouldUpdateTaskDate } from '../utils/auraCalculation';
+import { generateAuraDates, formatDate, getNextAuraDate, findCurrentAuraDate, shouldUpdateTaskDate, getTaskDisplayDate } from '../utils/auraCalculation';
 import { dateManager } from '../utils/dateManager';
 import TextPopup from './TextPopup';
 import ImageUpload from './ImageUpload';
@@ -43,19 +43,17 @@ const TaskItem = ({ task, collectionName, onUpdate }) => {
         // Generate aura dates for this task
         const auraDates = generateAuraDates(new Date(task.createdAt), new Date(task.endDate));
         
-        // Check if we need to update the task date
-        if (shouldUpdateTaskDate(task.currentDate, userCurrentDate, auraDates)) {
-          const newCurrentDate = findCurrentAuraDate(userCurrentDate, auraDates);
-          
-          if (newCurrentDate) {
-            setIsUpdating(true);
-            const taskRef = doc(db, collectionName, task.id);
-            await updateDoc(taskRef, { 
-              currentDate: newCurrentDate.toISOString(),
-              lastUpdated: userCurrentDate.toISOString()
-            });
-            setCurrentDisplayDate(newCurrentDate);
-          }
+        // Get the appropriate display date based on user's current date and when task was created
+        const appropriateDate = getTaskDisplayDate(userCurrentDate, auraDates, task.createdAt);
+        
+        if (appropriateDate && appropriateDate.getTime() !== new Date(task.currentDate).getTime()) {
+          setIsUpdating(true);
+          const taskRef = doc(db, collectionName, task.id);
+          await updateDoc(taskRef, { 
+            currentDate: appropriateDate.toISOString(),
+            lastUpdated: userCurrentDate.toISOString()
+          });
+          setCurrentDisplayDate(appropriateDate);
         } else {
           setCurrentDisplayDate(new Date(task.currentDate));
         }

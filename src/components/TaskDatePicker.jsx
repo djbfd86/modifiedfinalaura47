@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { Calendar, X, Check } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
+import { dateManager } from '../utils/dateManager';
 
 const TaskDatePicker = ({ onDateSelect, onCancel, defaultCurrentDate, defaultEndDate }) => {
   const [currentDate, setCurrentDate] = useState(
-    defaultCurrentDate ? defaultCurrentDate.toISOString().split('T')[0] : ''
+    defaultCurrentDate ? defaultCurrentDate.toISOString().split('T')[0] : dateManager.getCurrentDateForInput()
   );
   const [endDate, setEndDate] = useState(
     defaultEndDate ? defaultEndDate.toISOString().split('T')[0] : ''
